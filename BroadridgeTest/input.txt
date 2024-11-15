@@ -1,0 +1,4 @@
+The file should be in the correct format, and the application should read the input file and output a list of words.
+The application is an example, and the application should handle the input file carefully.
+The input is in a file and should be processed as per the requirements.
+This application output should be simple, and the application should output all words with their frequency.
