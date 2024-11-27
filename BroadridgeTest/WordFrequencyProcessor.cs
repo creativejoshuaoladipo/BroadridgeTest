@@ -41,22 +41,51 @@ namespace BroadridgeTest
         {
             var wordFrequencies = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
+            var lineQueue = new BlockingCollection<string>(boundedCapacity: 1000); // Queue with bounded capacity
+
             try
             {
-                await Parallel.ForEachAsync(File.ReadLinesAsync(filePath), async (line, _) =>
+                // Producer: Read file lines asynchronously
+                var producerTask = Task.Run(async () =>
                 {
-                    foreach (Match match in _wordPattern.Matches(line.ToLower()))
+                    try
                     {
-                        string word = match.Value;
-                        wordFrequencies.AddOrUpdate(word, 1, (key, count) => count + 1);
+                        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+                        using var reader = new StreamReader(stream);
+
+                        string? line;
+                        while ((line = await reader.ReadLineAsync()) != null)
+                        {
+                            lineQueue.Add(line);
+                        }
                     }
-                    await Task.CompletedTask;
+                    finally
+                    {
+                        lineQueue.CompleteAdding(); // Mark the queue as complete
+                    }
                 });
+
+                // Consumer: Process lines in parallel
+                var consumerTask = Task.Run(() =>
+                {
+                    Parallel.ForEach(lineQueue.GetConsumingEnumerable(), line =>
+                    {
+                        foreach (Match match in _wordPattern.Matches(line.ToLower()))
+                        {
+                            string word = match.Value;
+                            wordFrequencies.AddOrUpdate(word, 1, (key, count) => count + 1);
+                        }
+                    });
+                });
+
+                await Task.WhenAll(producerTask, consumerTask);
             }
             catch (IOException ex)
             {
                 throw new IOException("An error occurred while reading the file.", ex);
             }
+
+
 
             return wordFrequencies;
         }
